@@ -1,63 +1,93 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react'; // Added useCallback
 import { Mic, MicOff, Phone, PhoneOff, Users, Copy, Check, Activity } from 'lucide-react';
 import { LogViewer } from './components/LogViewer';
 import { AudioSimulator } from './components/AudioSimulator';
 import { useLogger } from './hooks/useLogger';
-import { useWebRTC } from './hooks/useWebRTC';
-import { signalingService } from './services/signalingService';
+import { useWebRTC } from './hooks/useWebRTC'; // Use the refactored hook
+import { signalingService } from './services/signalingService'; // Use the refactored service
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected';
 
 function App() {
   const logger = useLogger();
-  const webrtc = useWebRTC();
+  const webrtc = useWebRTC(); // Initialize the hook
   
   const [isConnected, setIsConnected] = useState<ConnectionState>('disconnected');
   const [isMuted, setIsMuted] = useState(false);
-  const [roomId, setRoomId] = useState('');
-  const [isHost, setIsHost] = useState(false);
+  const [roomId, setRoomId] = useState(''); // This will likely become the partner's socket ID in UI
+  const [isHost, setIsHost] = useState(false); // Refers to who is the WebRTC offer initiator
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [showStats, setShowStats] = useState(false);
   const [connectionStats, setConnectionStats] = useState<any>(null);
   const [waitingForPeer, setWaitingForPeer] = useState(false);
   const [remoteVolume, setRemoteVolume] = useState(0.3);
-  const [useRealWebRTC, setUseRealWebRTC] = useState(false);
+  // Removed useRealWebRTC state as it's now always real WebRTC
+  const [clientSocketId, setClientSocketId] = useState<string | null>(null); // NEW: To store the client's own socket ID
+  const [partnerDetails, setPartnerDetails] = useState<any>(null); // NEW: To store partner's details from server
 
-  const localAudioRef = useRef<HTMLAudioElement>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  // Refs for audio elements - crucial for playing streams
+  const localAudioRef = useRef<HTMLAudioElement>(null); 
+  const remoteAudioRef = useRef<HTMLAudioElement>(null); 
+
   const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // connectionTimeoutRef is no longer needed for simulation
+
+  // NEW: Callback for WebRTC connection state changes from useWebRTC hook
+  const handleWebRtcConnectionStateChange = useCallback((state: RTCPeerConnectionState) => {
+    logger.logInfo('webrtc', `PeerConnection State Changed: ${state}`);
+    if (state === 'connected') {
+      setIsConnected('connected');
+      setWaitingForPeer(false);
+      logger.logInfo('ui', 'Real WebRTC connection established');
+    } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+      // Only transition to disconnected if not already in a connecting state
+      // This prevents immediate UI flicker if a new call is starting
+      if (isConnected !== 'connecting') {
+        setIsConnected('disconnected');
+      }
+      setWaitingForPeer(false);
+      setError('Connection lost or failed.'); // More general error
+    }
+  }, [logger, isConnected]);
 
   useEffect(() => {
     logger.logInfo('system', 'Application VoiceConnect initialisée');
     
-    // Configure le service de signaling
-    const handleSignalingMessage = (message: any) => {
-      logger.logInfo('signaling', `Message reçu: ${message.type}`, message);
+    // Set up WebRTC hook with client's socket ID and state change callback
+    webrtc.setConnectionStateChangeCallback(handleWebRtcConnectionStateChange);
+
+    // Initial connection to signaling server
+    // This part should handle getting the client's socket.id
+    signalingService.socket?.on('connect', () => {
+        const id = signalingService.socket?.id || null;
+        setClientSocketId(id);
+        webrtc.setUserId(id || ''); // Pass client's socket ID to useWebRTC hook
+        logger.logInfo('signaling', `Client connected to server with ID: ${id}`);
+    });
+
+    // Handle incoming messages from signalingService
+    const handleSignalingMessage = (message: SignalingMessage) => {
+      logger.logInfo('signaling', `Message received by App.tsx: ${message.type}`, message);
       
       switch (message.type) {
         case 'user-joined':
-          if (isHost && isConnected === 'connecting') {
-            handlePeerJoined();
-          }
-          break;
-        case 'offer':
-          if (!isHost) {
-            handleOfferReceived(message.data);
-          }
-          break;
-        case 'answer':
-          if (isHost) {
-            handleAnswerReceived(message.data);
-          }
-          break;
-        case 'ice-candidate':
-          webrtc.addIceCandidate(message.data);
-          break;
+            // This event now directly means a match was found and peer is ready
+            setPartnerDetails({ // Placeholder, server should send real details in 'matchFound'
+                name: `Partner ${message.userId.slice(-4)}`,
+                id: message.userId,
+                // Add more details if server sends them with user-joined / matchFound
+                departure: 'Unknown', arrival: 'Unknown', truckColor: ''
+            });
+            setIsHost(message.isInitiator); // Set initiator status for WebRTC
+            setWaitingForPeer(false); // No longer waiting once match found
+            // webrtc.createPeerConnection() and getUserMedia() should have already been called.
+            // If initiator, create offer; if not, wait for offer. This is handled by useWebRTC's useEffect.
+            break;
         case 'user-left':
-          handlePeerLeft();
-          break;
+            handlePeerLeft();
+            break;
+        // Offer, Answer, ICE candidates are handled directly by useWebRTC hook
       }
     };
     
@@ -65,9 +95,24 @@ function App() {
     
     return () => {
       signalingService.off('message', handleSignalingMessage);
-      cleanup();
+      cleanup(); // Global cleanup when component unmounts
     };
-  }, []);
+  }, [logger, webrtc, handleWebRtcConnectionStateChange]); // Added webrtc and handleWebRtcConnectionStateChange to dependencies
+
+  useEffect(() => {
+    // Attach local stream to local audio element for monitoring
+    if (webrtc.localStream && localAudioRef.current) {
+      localAudioRef.current.srcObject = webrtc.localStream;
+      localAudioRef.current.muted = true; // Mute local playback
+      localAudioRef.current.play().catch(e => logger.logError('media', 'Failed to play local audio stream', e));
+    }
+    // Attach remote stream to remote audio element
+    if (webrtc.remoteStream && remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = webrtc.remoteStream;
+        remoteAudioRef.current.play().catch(e => logger.logError('media', 'Failed to play remote audio stream', e));
+    }
+  }, [webrtc.localStream, webrtc.remoteStream, logger]);
+
 
   useEffect(() => {
     if (isConnected === 'connected' && showStats) {
@@ -89,104 +134,29 @@ function App() {
     };
   }, [isConnected, showStats, webrtc]);
 
-  const handlePeerJoined = async () => {
-    try {
-      logger.logInfo('webrtc', 'Peer rejoint - création de l\'offre');
-      await webrtc.createOffer();
-    } catch (error) {
-      logger.logError('webrtc', 'Erreur lors de la création de l\'offre', { error });
-      setError('Erreur lors de la négociation WebRTC');
-      setIsConnected('disconnected');
-    }
-  };
-
-  const handleOfferReceived = async (offer: RTCSessionDescriptionInit) => {
-    try {
-      logger.logInfo('webrtc', 'Offre reçue - création de la réponse');
-      await webrtc.createAnswer(offer);
-      
-      // Simule la connexion établie
-      setTimeout(() => {
-        setIsConnected('connected');
-        setWaitingForPeer(false);
-        logger.logInfo('ui', 'Connexion WebRTC établie');
-      }, 1000);
-    } catch (error) {
-      logger.logError('webrtc', 'Erreur lors du traitement de l\'offre', { error });
-      setError('Erreur lors de la négociation WebRTC');
-      setIsConnected('disconnected');
-    }
-  };
-
-  const handleAnswerReceived = async (answer: RTCSessionDescriptionInit) => {
-    try {
-      logger.logInfo('webrtc', 'Réponse reçue - finalisation de la connexion');
-      await webrtc.handleAnswer(answer);
-      
-      // Simule la connexion établie
-      setTimeout(() => {
-        setIsConnected('connected');
-        setWaitingForPeer(false);
-        logger.logInfo('ui', 'Connexion WebRTC établie');
-      }, 1000);
-    } catch (error) {
-      logger.logError('webrtc', 'Erreur lors du traitement de la réponse', { error });
-      setError('Erreur lors de la négociation WebRTC');
-      setIsConnected('disconnected');
-    }
-  };
 
   const handlePeerLeft = () => {
     logger.logInfo('signaling', 'Le peer a quitté la conversation');
     setError('Votre interlocuteur a quitté la conversation');
-    cleanup();
+    cleanup(); // Clean up WebRTC connection
   };
+
   const cleanup = () => {
-    logger.logInfo('system', 'Nettoyage de la session');
-    webrtc.cleanup();
+    logger.logInfo('system', 'Nettoyage de la session App.tsx');
+    webrtc.cleanup(); // Call WebRTC hook's cleanup
     setIsConnected('disconnected');
     setWaitingForPeer(false);
-    
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-      connectionTimeoutRef.current = null;
-    }
+    setRoomId('');
+    setIsHost(false);
+    setError('');
+    setShowStats(false);
+    setConnectionStats(null);
+    setPartnerDetails(null); // Clear partner details
   };
 
   const generateRoomId = () => {
+    // This is now just a placeholder for the UI, as the server will handle actual room/partner IDs
     return Math.random().toString(36).substring(2, 8).toUpperCase();
-  };
-
-  const simulateSecondUserJoining = () => {
-    if (useRealWebRTC) {
-      // En mode WebRTC réel, on attend vraiment un utilisateur
-      logger.logInfo('signaling', 'Mode WebRTC réel: En attente d\'un vrai utilisateur...');
-    } else {
-      // En mode simulation, on simule l'arrivée d'un utilisateur
-      const delay = 3000 + Math.random() * 5000;
-      logger.logInfo('signaling', `Simulation: un utilisateur va rejoindre dans ${Math.round(delay/1000)}s`);
-      
-      connectionTimeoutRef.current = setTimeout(async () => {
-        try {
-          logger.logInfo('signaling', 'Simulation: deuxième utilisateur rejoint la salle');
-          logger.logInfo('webrtc', 'Simulation: négociation WebRTC réussie');
-          
-          setTimeout(() => {
-            setIsConnected('connected');
-            setWaitingForPeer(false);
-            logger.logInfo('ui', 'Connexion établie avec succès');
-            logger.logInfo('webrtc', 'État de connexion ICE: connected');
-            logger.logInfo('webrtc', 'Canal audio bidirectionnel établi');
-          }, 1500);
-          
-        } catch (error) {
-          logger.logError('webrtc', 'Erreur lors de la simulation', { error });
-          setError('Erreur lors de la connexion');
-          setIsConnected('disconnected');
-          setWaitingForPeer(false);
-        }
-      }, delay);
-    }
   };
   
   const createRoom = async () => {
@@ -195,33 +165,30 @@ function App() {
       setError('');
       setIsConnected('connecting');
       
-      // Créer la connexion peer et obtenir l'accès au microphone  
+      // Ensure local audio is set up and peer connection object is ready
       await webrtc.createPeerConnection();
       await webrtc.getUserMedia();
       
-      const newRoomId = generateRoomId();
+      const newRoomId = generateRoomId(); // This is a temporary UI ID
       setRoomId(newRoomId);
-      setIsHost(true);
       setWaitingForPeer(true);
       
-      // Rejoindre la salle via le service de signaling
-      const joined = await webrtc.joinRoom(newRoomId);
+      // Request a match from the signaling server. The server will assign the actual partner ID.
+      // We pass the newRoomId (as a placeholder) and the client's socket ID
+      const joined = await signalingService.joinRoom(newRoomId, clientSocketId || ''); 
       if (!joined) {
-        throw new Error('Impossible de créer la salle');
+        throw new Error('Impossible de démarrer la recherche de match.');
       }
       
-      logger.logInfo('ui', `Salle créée avec le code: ${newRoomId}`);
-      logger.logInfo('signaling', 'En attente qu\'un utilisateur rejoigne la salle');
+      logger.logInfo('ui', `Matchmaking initiated. Waiting for a partner...`);
+      logger.logInfo('signaling', 'En attente qu\'un utilisateur rejoigne la salle via le serveur');
       
-      // Configure le mode de signaling
-      signalingService.setSimulationMode(!useRealWebRTC);
-      simulateSecondUserJoining();
-      
-    } catch (err) {
-      logger.logError('ui', 'Erreur lors de la création de la salle', { error: err });
-      setError('Impossible d\'accéder au microphone');
+    } catch (err: any) { // Catch any error type
+      logger.logError('ui', 'Erreur lors de la création de la salle/recherche de match', { error: err.message || err });
+      setError(`Impossible d'accéder au microphone ou de commencer le matchmaking: ${err.message || 'Erreur inconnue'}`);
       setIsConnected('disconnected');
       setWaitingForPeer(false);
+      webrtc.cleanup(); // Clean up if an error occurs
     }
   };
 
@@ -237,50 +204,26 @@ function App() {
       setError('');
       setIsConnected('connecting');
       
-      // Créer la connexion peer et obtenir l'accès au microphone  
+      // Ensure local audio is set up and peer connection object is ready
       await webrtc.createPeerConnection();
       await webrtc.getUserMedia();
       
-      // Rejoindre la salle via le service de signaling
-      const joined = await webrtc.joinRoom(roomId);
+      // Request to join a specific match (not typically how matchmaking works,
+      // but if 'roomId' is an existing call ID from the server, it would be passed)
+      // For a typical matching system, 'joinRoom' would also call 'findMatch' on server.
+      // For now, let's assume 'joinRoom' button implies finding a match directly.
+      const joined = await signalingService.joinRoom(roomId, clientSocketId || ''); // Use existing roomId to signify intent
       if (!joined) {
-        throw new Error('Salle introuvable ou pleine');
+        throw new Error('Salle introuvable ou matchmaking échoué');
       }
       
-      logger.logInfo('signaling', 'Connexion à la salle en cours...');
+      logger.logInfo('signaling', 'Matchmaking initiated. Waiting for connection...');
       
-      // Configure le mode de signaling
-      signalingService.setSimulationMode(!useRealWebRTC);
-      
-      if (useRealWebRTC) {
-        // En mode WebRTC réel, on attend vraiment la connexion
-        logger.logInfo('signaling', 'Mode WebRTC réel: En attente de la connexion au host...');
-      } else {
-        // En mode simulation, on simule la connexion
-        setTimeout(async () => {
-          try {
-            logger.logInfo('signaling', 'Simulation: connexion au host en cours');
-            logger.logInfo('webrtc', 'Simulation: négociation WebRTC réussie');
-            
-            setTimeout(() => {
-              setIsConnected('connected');
-              logger.logInfo('ui', 'Connexion établie avec succès');
-              logger.logInfo('webrtc', 'État de connexion ICE: connected');
-              logger.logInfo('webrtc', 'Canal audio bidirectionnel établi');
-            }, 1500);
-            
-          } catch (error) {
-            logger.logError('webrtc', 'Erreur lors de la simulation', { error });
-            setError('Erreur lors de la connexion');
-            setIsConnected('disconnected');
-          }
-        }, 2000);
-      }
-      
-    } catch (err) {
-      logger.logError('ui', 'Erreur lors de la connexion à la salle', { error: err });
-      setError('Impossible de rejoindre la salle');
+    } catch (err: any) { // Catch any error type
+      logger.logError('ui', 'Erreur lors de la connexion à la salle/recherche de match', { error: err.message || err });
+      setError(`Impossible de rejoindre la salle ou de se connecter: ${err.message || 'Erreur inconnue'}`);
       setIsConnected('disconnected');
+      webrtc.cleanup(); // Clean up if an error occurs
     }
   };
 
@@ -291,18 +234,17 @@ function App() {
 
   const disconnect = () => {
     logger.logInfo('ui', 'Déconnexion demandée par l\'utilisateur');
+    if (webrtc.peerConnection) { // Only send leaveRoom if a connection was attempted/active
+        webrtc.leaveRoom(); // Signal server to end call
+    }
     cleanup();
-    setRoomId('');
-    setIsHost(false);
-    setError('');
-    setShowStats(false);
-    setConnectionStats(null);
   };
 
   const copyRoomId = async () => {
     try {
       logger.logDebug('ui', 'Copie du code de salle dans le presse-papiers');
-      await navigator.clipboard.writeText(roomId);
+      // Copy the current client's socket ID, which acts as a temporary "room ID" for direct sharing
+      await navigator.clipboard.writeText(clientSocketId || roomId); 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -324,31 +266,7 @@ function App() {
         <h1 className="text-2xl font-bold text-gray-900 mb-2">VoiceConnect</h1>
         <p className="text-gray-600 mb-4">Parlez simplement avec vos proches</p>
         
-        {/* Toggle pour WebRTC réel */}
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-          <label className="flex items-center justify-center space-x-3 cursor-pointer">
-            <span className="text-sm text-gray-700">Mode simulation</span>
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={useRealWebRTC}
-                onChange={(e) => setUseRealWebRTC(e.target.checked)}
-                className="sr-only"
-              />
-              <div className={`w-10 h-6 rounded-full transition-colors ${useRealWebRTC ? 'bg-blue-600' : 'bg-gray-300'}`}>
-                <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform mt-1 ${useRealWebRTC ? 'translate-x-5' : 'translate-x-1'}`}></div>
-              </div>
-            </div>
-            <span className="text-sm text-gray-700">WebRTC réel</span>
-          </label>
-          <p className="text-xs text-gray-500 mt-2">
-            {useRealWebRTC 
-              ? '🔗 Utilise Xirsys pour de vraies connexions P2P' 
-              : '🎭 Simule les connexions pour les tests'
-            }
-          </p>
-        </div>
-        
+        {/* Remove the simulation toggle as it's always real WebRTC now */}
         <div className="flex items-center justify-center space-x-4 text-sm text-gray-500">
           <div className="flex items-center space-x-1">
             <div className={`w-2 h-2 rounded-full ${logger.isLogging ? 'bg-green-500' : 'bg-gray-400'}`}></div>
@@ -411,7 +329,7 @@ function App() {
         <div className="w-8 h-8 border-4 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
       
-      {isHost ? (
+      {isHost ? ( // isHost now indicates who initiated the WebRTC offer
         <div>
           <h2 className="text-xl font-bold text-gray-900 mb-4">Salle créée !</h2>
           <p className="text-gray-600 mb-6">Partagez ce code avec votre contact :</p>
@@ -419,7 +337,7 @@ function App() {
           <div className="bg-gray-50 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-center space-x-3">
               <span className="text-2xl font-mono font-bold text-gray-900 tracking-wider">
-                {roomId}
+                {clientSocketId || 'Générant...'} {/* Display client's own socket ID */}
               </span>
               <button
                 onClick={copyRoomId}
@@ -457,7 +375,10 @@ function App() {
       </div>
       
       <h2 className="text-xl font-bold text-gray-900 mb-2">Connecté !</h2>
-      <p className="text-gray-600 mb-6">Salle : {roomId}</p>
+      <p className="text-gray-600 mb-6">Salle : {roomId || (partnerDetails ? partnerDetails.id : 'N/A')}</p> {/* Show actual partner ID */}
+      {partnerDetails && (
+          <p className="text-gray-700 text-sm mb-4">Avec : {partnerDetails.name}</p>
+      )}
       
       {/* Bouton pour afficher les statistiques */}
       <div className="mb-6">
@@ -479,24 +400,32 @@ function App() {
         <div className="mb-6 p-4 bg-gray-50 rounded-lg text-left">
           <h3 className="font-semibold text-gray-900 mb-2 text-center">Statistiques WebRTC</h3>
           <div className="space-y-2 text-xs">
-            {Object.entries(connectionStats).slice(0, 5).map(([key, value]: [string, any]) => (
-              <div key={key} className="flex justify-between">
-                <span className="text-gray-600 truncate">{value.type || key}</span>
-                <span className="text-gray-900 font-mono">
-                  {value.state || value.connectionState || 'N/A'}
-                </span>
-              </div>
-            ))}
+            {/* Example of how to display stats, you'd want to parse connectionStats */}
+            {Object.keys(connectionStats).length > 0 ? (
+                Object.entries(connectionStats).slice(0, 5).map(([key, value]: [string, any]) => (
+                    <div key={key} className="flex justify-between">
+                        <span className="text-gray-600 truncate">{value.type || key}</span>
+                        <span className="text-gray-900 font-mono">
+                        {value.bytesReceived || value.bytesSent || value.state || 'N/A'}
+                        </span>
+                    </div>
+                ))
+            ) : (
+                <p className="text-gray-500">Aucune statistique disponible.</p>
+            )}
           </div>
         </div>
       )}
       
-      {/* Simulateur audio */}
-      <AudioSimulator
-        isConnected={true}
-        isMuted={isMuted}
-        onVolumeChange={setRemoteVolume}
-      />
+      {/* Audio Simulator is now just a visual indicator if not connected, or if you want to test remote audio */}
+      {/* If connected, real remote audio should be playing via remoteAudioRef */}
+      {isConnected !== 'connected' && (
+        <AudioSimulator
+            isConnected={true} // Still show it as connected to test if it's the issue
+            isMuted={isMuted}
+            onVolumeChange={setRemoteVolume}
+        />
+      )}
       
       <div className="flex justify-center space-x-6 mb-8">
         <button
@@ -528,8 +457,9 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
-      <audio ref={localAudioRef} muted />
-      <audio ref={remoteAudioRef} autoPlay />
+      {/* Audio elements to play local and remote streams */}
+      <audio id="localAudioPlayer" ref={localAudioRef} muted style={{ display: 'none' }} /> 
+      <audio id="remoteAudioPlayer" ref={remoteAudioRef} autoPlay style={{ display: 'none' }} />
       
       {/* Composant de visualisation des logs */}
       <LogViewer
