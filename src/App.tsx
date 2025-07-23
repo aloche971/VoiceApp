@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, Phone, PhoneOff, Users, Copy, Check, Activity } from 'lucide-react';
 import { LogViewer } from './components/LogViewer';
 import { AudioSimulator } from './components/AudioSimulator';
+import { DataTableExample } from './components/AccessibleDataTable';
 import { useLogger } from './hooks/useLogger';
 import { useWebRTC } from './hooks/useWebRTC';
 import { signalingService } from './services/signalingService';
@@ -316,7 +317,14 @@ function App() {
   };
 
   const renderDisconnectedState = () => (
-    <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+    <div className="w-full max-w-4xl mx-auto space-y-8">
+      {/* Demo du tableau accessible */}
+      <div className="bg-white rounded-2xl shadow-xl p-8">
+        <DataTableExample />
+      </div>
+      
+      {/* Interface VoiceConnect existante */}
+      <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
       <div className="text-center mb-8">
         <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Users className="w-10 h-10 text-blue-600" />
@@ -401,6 +409,7 @@ function App() {
             Rejoindre la conversation
           </button>
         </div>
+      </div>
       </div>
     </div>
   );
