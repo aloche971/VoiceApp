@@ -1,21 +1,34 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react'; // Added useEffect
 import { useLogger } from './useLogger';
 import { xirsysService } from '../services/xirsysService';
-import { signalingService } from '../services/signalingService';
+import { signalingService, SignalingMessage } from '../services/signalingService'; // Import SignalingMessage type
 
 export const useWebRTC = () => {
   const { logInfo, logWarning, logError, logDebug } = useLogger();
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
-  const currentRoomRef = useRef<string | null>(null);
-  const userIdRef = useRef<string>(`user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  const currentRoomRef = useRef<string | null>(null); // This will be the partner's socket ID
+  const userIdRef = useRef<string>(''); // This will be set by App.tsx with current client's socket ID
+
+  // NEW: Callback to notify App.tsx about WebRTC connection status changes
+  const onWebRtcConnectionStateChangeRef = useRef<((state: RTCPeerConnectionState) => void) | null>(null);
+
+  // Set the user ID when it becomes available (from App.tsx)
+  const setUserId = useCallback((id: string) => {
+    userIdRef.current = id;
+    logInfo('system', `WebRTC hook initialized with userId: ${id}`);
+  }, [logInfo]);
+
+  // Set the callback for App.tsx to listen to WebRTC state changes
+  const setConnectionStateChangeCallback = useCallback((callback: (state: RTCPeerConnectionState) => void) => {
+    onWebRtcConnectionStateChangeRef.current = callback;
+  }, []);
 
   const createPeerConnection = useCallback(async () => {
     try {
       logInfo('webrtc', 'Récupération des serveurs ICE Xirsys...');
       
-      // Récupère les serveurs ICE de Xirsys
       const iceServers = await xirsysService.getIceServers();
       
       logInfo('webrtc', 'Serveurs ICE récupérés', { 
@@ -36,6 +49,12 @@ export const useWebRTC = () => {
             candidate: event.candidate.candidate,
             sdpMLineIndex: event.candidate.sdpMLineIndex
           });
+          // Send ICE candidate via signaling service
+          if (currentRoomRef.current) {
+            signalingService.sendIceCandidate(currentRoomRef.current, event.candidate);
+          } else {
+            logWarning('webrtc', 'ICE candidate generated but no room ID set to send to.');
+          }
         } else {
           logInfo('webrtc', 'Génération des candidats ICE terminée');
         }
@@ -43,16 +62,22 @@ export const useWebRTC = () => {
 
       pc.oniceconnectionstatechange = () => {
         logInfo('webrtc', `État de connexion ICE: ${pc.iceConnectionState}`);
-        
+        // Notify App.tsx of state change
+        if (onWebRtcConnectionStateChangeRef.current) {
+            onWebRtcConnectionStateChangeRef.current(pc.iceConnectionState);
+        }
         switch (pc.iceConnectionState) {
           case 'connected':
             logInfo('webrtc', 'Connexion ICE établie avec succès');
             break;
           case 'disconnected':
             logWarning('webrtc', 'Connexion ICE interrompue');
+            // Trigger cleanup if disconnected to prevent stale state
+            cleanup(); 
             break;
           case 'failed':
             logError('webrtc', 'Échec de la connexion ICE');
+            cleanup(); // Trigger cleanup on failure
             break;
           case 'closed':
             logInfo('webrtc', 'Connexion ICE fermée');
@@ -62,6 +87,17 @@ export const useWebRTC = () => {
 
       pc.onconnectionstatechange = () => {
         logInfo('webrtc', `État de connexion: ${pc.connectionState}`);
+        // Notify App.tsx of state change for general connection
+        if (onWebRtcConnectionStateChangeRef.current) {
+            onWebRtcConnectionStateChangeRef.current(pc.connectionState);
+        }
+        // If connection is truly established
+        if (pc.connectionState === 'connected') {
+            logInfo('webrtc', 'WebRTC connection fully established.');
+            // This is where App.tsx should transition to 'connected' state
+        } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+            cleanup(); // Clean up on disconnection or failure
+        }
       };
 
       pc.onsignalingstatechange = () => {
@@ -76,6 +112,12 @@ export const useWebRTC = () => {
         
         if (event.streams && event.streams[0]) {
           remoteStreamRef.current = event.streams[0];
+          // Ensure the audio element is playing this stream
+          const remoteAudioElement = document.getElementById('remoteAudioPlayer') as HTMLAudioElement;
+          if (remoteAudioElement) {
+              remoteAudioElement.srcObject = event.streams[0];
+              remoteAudioElement.play().catch(e => logError('media', 'Failed to play remote audio', e));
+          }
         }
       };
 
@@ -93,25 +135,29 @@ export const useWebRTC = () => {
   const joinRoom = useCallback(async (roomId: string) => {
     try {
       logInfo('signaling', `Tentative de connexion à la salle: ${roomId}`);
-      currentRoomRef.current = roomId;
+      currentRoomRef.current = roomId; // roomId here is the partner's socket ID from 'matchFound'
       
+      // We don't directly join a "room" on the server here. Instead,
+      // 'findMatch' was already emitted by signalingService, and server handles matching.
+      // This function essentially just sets the room ID for future signaling.
+      // The `signalingService.joinRoom` in `App.tsx` now calls `findMatch` and sets this ID.
       const success = await signalingService.joinRoom(roomId, userIdRef.current);
       
       if (success) {
-        logInfo('signaling', `Connecté à la salle: ${roomId}`);
+        logInfo('signaling', `Signaling service initiated for room: ${roomId}`);
         return true;
       } else {
-        logWarning('signaling', `Impossible de rejoindre la salle: ${roomId}`);
+        logWarning('signaling', `Failed to initiate signaling for room: ${roomId}`);
         return false;
       }
     } catch (error) {
-      logError('signaling', 'Erreur lors de la connexion à la salle', { error, roomId });
+      logError('signaling', 'Erreur lors de l\'initiation du signaling pour la salle', { error, roomId });
       return false;
     }
   }, [logInfo, logWarning, logError]);
 
   const leaveRoom = useCallback(async () => {
-    if (currentRoomRef.current) {
+    if (currentRoomRef.current && userIdRef.current) {
       await signalingService.leaveRoom(currentRoomRef.current, userIdRef.current);
       logInfo('signaling', `Quitté la salle: ${currentRoomRef.current}`);
       currentRoomRef.current = null;
@@ -147,6 +193,14 @@ export const useWebRTC = () => {
           settings: track.getSettings()
         }))
       });
+
+      // Attach local stream to local audio element for monitoring
+      const localAudioElement = document.getElementById('localAudioPlayer') as HTMLAudioElement;
+      if (localAudioElement) {
+          localAudioElement.srcObject = stream;
+          localAudioElement.muted = true; // Mute local playback
+          localAudioElement.play().catch(e => logError('media', 'Failed to play local audio', e));
+      }
 
       // Ajouter les tracks à la connexion peer
       if (peerConnectionRef.current) {
@@ -185,9 +239,11 @@ export const useWebRTC = () => {
       logInfo('webrtc', 'Description locale définie (offre)');
       
       // Envoie l'offre via le service de signaling
-      if (currentRoomRef.current) {
+      if (currentRoomRef.current) { // currentRoomRef.current is the partner's socket ID here
         await signalingService.sendOffer(currentRoomRef.current, offer);
         logInfo('signaling', 'Offre envoyée via signaling');
+      } else {
+        logError('signaling', 'Impossible d\'envoyer l\'offre: currentRoomRef non défini');
       }
       
       return offer;
@@ -216,9 +272,11 @@ export const useWebRTC = () => {
       logInfo('webrtc', 'Description locale définie (réponse)');
       
       // Envoie la réponse via le service de signaling
-      if (currentRoomRef.current) {
+      if (currentRoomRef.current) { // currentRoomRef.current is the partner's socket ID here
         await signalingService.sendAnswer(currentRoomRef.current, answer);
         logInfo('signaling', 'Réponse envoyée via signaling');
+      } else {
+        logError('signaling', 'Impossible d\'envoyer la réponse: currentRoomRef non défini');
       }
       
       return answer;
@@ -247,18 +305,14 @@ export const useWebRTC = () => {
 
   const addIceCandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
     if (!peerConnectionRef.current) {
-      throw new Error('Connexion peer non initialisée');
+      logWarning('webrtc', 'Connexion peer non initialisée, impossible d\'ajouter le candidat ICE');
+      return;
     }
 
     try {
       logDebug('webrtc', 'Ajout du candidat ICE distant', { candidate: candidate.candidate });
-      await peerConnectionRef.current.addIceCandidate(candidate);
+      await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)); // Ensure it's a new RTCIceCandidate
       logDebug('webrtc', 'Candidat ICE distant ajouté avec succès');
-      
-      // Envoie le candidat ICE via le service de signaling
-      if (currentRoomRef.current) {
-        await signalingService.sendIceCandidate(currentRoomRef.current, candidate);
-      }
     } catch (error) {
       logError('webrtc', 'Erreur lors de l\'ajout du candidat ICE', { error, candidate });
     }
@@ -300,6 +354,12 @@ export const useWebRTC = () => {
     }
 
     remoteStreamRef.current = null;
+    // Stop remote audio playback if any
+    const remoteAudioElement = document.getElementById('remoteAudioPlayer') as HTMLAudioElement;
+    if (remoteAudioElement) {
+        remoteAudioElement.srcObject = null;
+    }
+
   }, [logInfo, logDebug, leaveRoom]);
 
   const getConnectionStats = useCallback(async () => {
@@ -321,18 +381,77 @@ export const useWebRTC = () => {
     }
   }, [logDebug, logError]);
 
+  // NEW: Effect to handle incoming signaling messages
+  useEffect(() => {
+    const handleSignalingMessage = (message: SignalingMessage) => {
+      logInfo('signaling', `Message received from server: ${message.type}`, message);
+      
+      switch (message.type) {
+        case 'user-joined':
+          // This happens when a match is found and peer is ready to connect.
+          // The initiator will create the offer.
+          if (message.isInitiator && peerConnectionRef.current) {
+            currentRoomRef.current = message.userId; // Set partner's socket ID as current room/target
+            createOffer().catch(logError); // Initiator creates offer
+          } else if (!message.isInitiator && peerConnectionRef.current) {
+            currentRoomRef.current = message.userId; // Set partner's socket ID as current room/target
+          }
+          break;
+        case 'offer':
+          // Non-initiator receives offer and creates answer
+          if (peerConnectionRef.current) {
+            currentRoomRef.current = message.senderId; // Ensure current room points to sender
+            createAnswer(message.data).catch(logError);
+          } else {
+            logWarning('webrtc', 'Received offer but peerConnection not ready.');
+          }
+          break;
+        case 'answer':
+          // Initiator receives answer
+          if (peerConnectionRef.current) {
+            handleAnswer(message.data).catch(logError);
+          } else {
+            logWarning('webrtc', 'Received answer but peerConnection not ready.');
+          }
+          break;
+        case 'ice-candidate':
+          // Both peers receive ICE candidates
+          addIceCandidate(message.data).catch(logError);
+          break;
+        case 'user-left':
+          // Partner left, clean up
+          logInfo('signaling', 'Partner left the conversation. Cleaning up.');
+          cleanup();
+          // Notify App.tsx that connection ended due to partner leaving
+          if (onWebRtcConnectionStateChangeRef.current) {
+              onWebRtcConnectionStateChangeRef.current('disconnected');
+          }
+          break;
+      }
+    };
+
+    signalingService.on('message', handleSignalingMessage);
+
+    return () => {
+      signalingService.off('message', handleSignalingMessage);
+    };
+  }, [logInfo, logWarning, logError, createOffer, createAnswer, handleAnswer, addIceCandidate, cleanup]);
+
+
   return {
     createPeerConnection,
     joinRoom,
     leaveRoom,
     getUserMedia,
-    createOffer,
-    createAnswer,
-    handleAnswer,
-    addIceCandidate,
+    createOffer, // Will be called by useWebRTC internally if initiator
+    createAnswer, // Will be called by useWebRTC internally if not initiator
+    handleAnswer, // Will be called by useWebRTC internally if initiator
+    addIceCandidate, // Will be called by useWebRTC internally
     toggleMute,
     cleanup,
     getConnectionStats,
+    setUserId, // New: Function to set the client's socket ID
+    setConnectionStateChangeCallback, // New: Function to set callback for App.tsx
     currentRoom: currentRoomRef.current,
     userId: userIdRef.current,
     localStream: localStreamRef.current,
