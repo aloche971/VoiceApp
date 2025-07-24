@@ -395,7 +395,7 @@ function App() {
       </div>
     </div>
   );
-
+    <LogViewer logs={logger.logs} onFilteredCountChange={setVisibleLogCount} />
   const renderConnectingState = () => (
     <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
       <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -404,4 +404,106 @@ function App() {
 
       {isHost ? (
         <div>
-          <h2 className="text-xl font-bold
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            Salle créée : {roomId}
+          </h2>
+          <div className="flex items-center justify-center space-x-2 mb-6">
+            <button
+              onClick={copyRoomId}
+              className="flex items-center space-x-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition-colors"
+            >
+              {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+              <span className="font-mono text-lg">{roomId}</span>
+            </button>
+          </div>
+          {waitingForPeer && (
+            <p className="text-gray-600 mb-4">En attente qu'un utilisateur rejoigne...</p>
+          )}
+        </div>
+      ) : (
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            Connexion à la salle {roomId}
+          </h2>
+          <p className="text-gray-600 mb-4">Connexion en cours...</p>
+        </div>
+      )}
+
+      <button
+        onClick={disconnect}
+        className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors duration-200"
+      >
+        Annuler
+      </button>
+    </div>
+  );
+
+  const renderConnectedState = () => (
+    <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+      <div className="text-center mb-8">
+        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Phone className="w-10 h-10 text-green-600" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Connecté</h2>
+        <p className="text-gray-600">Salle : {roomId}</p>
+      </div>
+
+      <div className="flex items-center justify-center space-x-4 mb-8">
+        <button
+          onClick={toggleMute}
+          className={`p-4 rounded-full transition-colors duration-200 ${
+            isMuted
+              ? 'bg-red-100 hover:bg-red-200 text-red-600'
+              : 'bg-green-100 hover:bg-green-200 text-green-600'
+          }`}
+        >
+          {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+        </button>
+
+        <button
+          onClick={toggleStats}
+          className="p-4 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 transition-colors duration-200"
+        >
+          <Activity className="w-6 h-6" />
+        </button>
+      </div>
+
+      {showStats && connectionStats && (
+        <div className="bg-gray-50 rounded-lg p-4 mb-6 text-sm">
+          <h3 className="font-semibold mb-2">Statistiques de connexion</h3>
+          <div className="space-y-1 text-gray-600">
+            <p>Latence : {connectionStats.roundTripTime || 'N/A'}ms</p>
+            <p>Qualité : {connectionStats.quality || 'Bonne'}</p>
+            <p>Codec : {connectionStats.codec || 'opus'}</p>
+          </div>
+        </div>
+      )}
+
+      <AudioSimulator 
+        isConnected={isConnected === 'connected'} 
+        remoteVolume={remoteVolume}
+        onVolumeChange={setRemoteVolume}
+      />
+
+      <button
+        onClick={disconnect}
+        className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors duration-200 flex items-center justify-center space-x-2"
+      >
+        <PhoneOff className="w-5 h-5" />
+        <span>Raccrocher</span>
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="container mx-auto py-8">
+        {isConnected === 'disconnected' && renderDisconnectedState()}
+        {isConnected === 'connecting' && renderConnectingState()}
+        {isConnected === 'connected' && renderConnectedState()}
+      </div>
+
+      <LogViewer logs={logger.logs} onFilteredCountChange={setVisibleLogCount} />
+    </div>
+  );
+}
