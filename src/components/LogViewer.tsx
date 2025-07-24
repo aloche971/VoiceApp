@@ -88,7 +88,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({
         <div className="flex items-center space-x-2">
           <h3 className="font-semibold text-gray-900">Logs de Debug</h3>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-            {logs.length}
+            {filteredLogs.length}
           </span>
         </div>
         <button
