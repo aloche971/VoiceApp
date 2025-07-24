@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download, Play, Pause, Copy, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 export interface LogEntry {
@@ -15,28 +15,35 @@ interface LogViewerProps {
   onClear: () => void;
   isLogging: boolean;
   onToggleLogging: () => void;
+  onFilteredCountChange: (count: number) => void; // Nouvelle ligne ajoutée
 }
 
 export const LogViewer: React.FC<LogViewerProps> = ({
   logs,
   onClear,
   isLogging,
-  onToggleLogging
+  onToggleLogging,
+  onFilteredCountChange // Ajouté ici
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [filter, setFilter] = useState<string>('all');
 
-  const filteredLogs = logs.filter(log => 
+  const filteredLogs = logs.filter(log =>
     filter === 'all' || log.level === filter || log.category === filter
   );
 
+  // Nouveau useEffect pour notifier le parent du nombre de logs filtrés
+  useEffect(() => {
+    onFilteredCountChange(filteredLogs.length);
+  }, [filteredLogs.length, onFilteredCountChange]);
+
   const downloadLogs = () => {
-    const logText = logs.map(log => 
+    const logText = logs.map(log =>
       `[${log.timestamp.toISOString()}] [${log.level.toUpperCase()}] [${log.category}] ${log.message}${
         log.data ? '\nData: ' + JSON.stringify(log.data, null, 2) : ''
       }`
     ).join('\n\n');
-    
+
     const blob = new Blob([logText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -49,10 +56,10 @@ export const LogViewer: React.FC<LogViewerProps> = ({
   };
 
   const copyLogs = async () => {
-    const logText = logs.map(log => 
+    const logText = logs.map(log =>
       `[${log.timestamp.toLocaleString()}] [${log.level.toUpperCase()}] ${log.message}`
     ).join('\n');
-    
+
     try {
       await navigator.clipboard.writeText(logText);
     } catch (err) {
@@ -88,7 +95,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({
         <div className="flex items-center space-x-2">
           <h3 className="font-semibold text-gray-900">Logs de Debug</h3>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-            {filteredLogs.length}
+            {filteredLogs.length} {/* Modifié pour afficher le nombre de logs filtrés */}
           </span>
         </div>
         <button
@@ -107,15 +114,15 @@ export const LogViewer: React.FC<LogViewerProps> = ({
               <button
                 onClick={onToggleLogging}
                 className={`flex items-center space-x-1 px-3 py-1 rounded text-sm font-medium ${
-                  isLogging 
-                    ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                  isLogging
+                    ? 'bg-red-100 text-red-700 hover:bg-red-200'
                     : 'bg-green-100 text-green-700 hover:bg-green-200'
                 }`}
               >
                 {isLogging ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                 <span>{isLogging ? 'Pause' : 'Reprendre'}</span>
               </button>
-              
+
               <button
                 onClick={copyLogs}
                 className="flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded text-sm font-medium"
@@ -123,7 +130,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({
                 <Copy className="w-3 h-3" />
                 <span>Copier</span>
               </button>
-              
+
               <button
                 onClick={downloadLogs}
                 className="flex items-center space-x-1 px-3 py-1 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded text-sm font-medium"
@@ -131,7 +138,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({
                 <Download className="w-3 h-3" />
                 <span>Télécharger</span>
               </button>
-              
+
               <button
                 onClick={onClear}
                 className="flex items-center space-x-1 px-3 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded text-sm font-medium"
