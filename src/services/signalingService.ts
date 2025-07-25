@@ -1,4 +1,6 @@
 // Service de signaling pour WebRTC réel
+import { realSignalingService } from './realSignalingService';
+
 export type SignalingMessage = 
   | { type: 'offer'; data: RTCSessionDescriptionInit; roomId: string }
   | { type: 'answer'; data: RTCSessionDescriptionInit; roomId: string }
@@ -12,7 +14,7 @@ export type SignalingEventHandler = (message: SignalingMessage) => void;
 
 class SignalingService {
   private eventHandlers: Map<string, SignalingEventHandler[]> = new Map();
-  private isSimulated = true; // Pour basculer entre simulation et vrai signaling
+  private isSimulated = false; // Par défaut, utilise le vrai signaling
 
   // Simule un serveur de signaling simple
   private simulatedRooms: Map<string, string[]> = new Map();
@@ -44,11 +46,10 @@ class SignalingService {
   async joinRoom(roomId: string, userId: string): Promise<boolean> {
     if (this.isSimulated) {
       return this.simulatedJoinRoom(roomId, userId);
+    } else {
+      // Utilise le vrai service de signaling
+      return await realSignalingService.joinRoom(roomId, userId);
     }
-    
-    // Ici, vous pourriez implémenter une vraie connexion WebSocket
-    // Pour l'instant, on utilise la simulation
-    return this.simulatedJoinRoom(roomId, userId);
   }
 
   private simulatedJoinRoom(roomId: string, userId: string): Promise<boolean> {
@@ -81,42 +82,64 @@ class SignalingService {
   }
 
   async leaveRoom(roomId: string, userId: string) {
-    if (this.simulatedRooms.has(roomId)) {
-      const room = this.simulatedRooms.get(roomId)!;
-      const index = room.indexOf(userId);
-      if (index > -1) {
-        room.splice(index, 1);
-        this.emit('message', { type: 'user-left', roomId });
-        
-        if (room.length === 0) {
-          this.simulatedRooms.delete(roomId);
+    if (this.isSimulated) {
+      if (this.simulatedRooms.has(roomId)) {
+        const room = this.simulatedRooms.get(roomId)!;
+        const index = room.indexOf(userId);
+        if (index > -1) {
+          room.splice(index, 1);
+          this.emit('message', { type: 'user-left', roomId });
+          
+          if (room.length === 0) {
+            this.simulatedRooms.delete(roomId);
+          }
         }
       }
+    } else {
+      await realSignalingService.leaveRoom(roomId, userId);
     }
   }
 
   async sendOffer(roomId: string, offer: RTCSessionDescriptionInit) {
-    // Dans une vraie implémentation, ceci serait envoyé via WebSocket
-    // Pour la simulation, on émet directement
-    setTimeout(() => {
-      this.emit('message', { type: 'offer', data: offer, roomId });
-    }, 500);
+    if (this.isSimulated) {
+      // Pour la simulation, on émet directement
+      setTimeout(() => {
+        this.emit('message', { type: 'offer', data: offer, roomId });
+      }, 500);
+    } else {
+      await realSignalingService.sendOffer(roomId, offer);
+    }
   }
 
   async sendAnswer(roomId: string, answer: RTCSessionDescriptionInit) {
-    setTimeout(() => {
-      this.emit('message', { type: 'answer', data: answer, roomId });
-    }, 500);
+    if (this.isSimulated) {
+      setTimeout(() => {
+        this.emit('message', { type: 'answer', data: answer, roomId });
+      }, 500);
+    } else {
+      await realSignalingService.sendAnswer(roomId, answer);
+    }
   }
 
   async sendIceCandidate(roomId: string, candidate: RTCIceCandidateInit) {
-    setTimeout(() => {
-      this.emit('message', { type: 'ice-candidate', data: candidate, roomId });
-    }, 100);
+    if (this.isSimulated) {
+      setTimeout(() => {
+        this.emit('message', { type: 'ice-candidate', data: candidate, roomId });
+      }, 100);
+    } else {
+      await realSignalingService.sendIceCandidate(roomId, candidate);
+    }
   }
 
   setSimulationMode(enabled: boolean) {
     this.isSimulated = enabled;
+    
+    if (!enabled) {
+      // Connecter le service réel aux événements
+      realSignalingService.on('message', (message) => {
+        this.emit('message', message);
+      });
+    }
   }
 }
 
