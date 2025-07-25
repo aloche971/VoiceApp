@@ -25,10 +25,26 @@ class RealSignalingService {
     this.connect();
   }
 
+  private getWebSocketUrl(): string {
+    const currentHostname = window.location.hostname;
+    
+    // Dans WebContainer, chaque port a son propre hostname
+    // Remplacer le port 5173 par 8080 dans le hostname
+    if (currentHostname.includes('--5173--')) {
+      const wsHostname = currentHostname.replace('--5173--', '--8080--');
+      return `ws://${wsHostname}/`;
+    }
+    
+    // Fallback pour développement local
+    return `ws://localhost:8080`;
+  }
+
   private connect() {
     try {
-      // Connexion au serveur WebSocket local
-      this.ws = new WebSocket(`ws://${window.location.hostname}:8080`);
+      // Connexion au serveur WebSocket avec URL dynamique
+      const wsUrl = this.getWebSocketUrl();
+      console.log('🔗 Tentative de connexion WebSocket à:', wsUrl);
+      this.ws = new WebSocket(wsUrl);
       
       this.ws.onopen = () => {
         console.log('🔗 Connexion WebSocket établie avec le serveur de signaling');
