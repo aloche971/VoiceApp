@@ -28,7 +28,7 @@ class RealSignalingService {
   private connect() {
     try {
       // Connexion au serveur WebSocket local
-      this.ws = new WebSocket('ws://localhost:8080');
+      this.ws = new WebSocket(`ws://${window.location.hostname}:8080`);
       
       this.ws.onopen = () => {
         console.log('🔗 Connexion WebSocket établie avec le serveur de signaling');
