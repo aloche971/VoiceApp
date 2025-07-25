@@ -5,14 +5,12 @@ const express = require('express');
 const app = express();
 const server = http.createServer(app);
 
-// Créer le serveur WebSocket sur le port 8080
-const wss = new WebSocket.Server({ port: 8080 });
+// Créer le serveur WebSocket attaché au serveur HTTP
+const wss = new WebSocket.Server({ server });
 
 // Stockage des salles et des connexions
 const rooms = new Map();
 const connections = new Map();
-
-console.log('🚀 Serveur de signaling WebRTC démarré sur le port 8080');
 
 wss.on('connection', (ws) => {
   console.log('📱 Nouvelle connexion WebSocket');
@@ -195,10 +193,11 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Démarrer le serveur HTTP sur le port 3001 pour les endpoints REST
-const httpPort = 3001;
+// Démarrer le serveur HTTP sur le port 8080 pour les endpoints REST et WebSocket
+const httpPort = 8080;
 server.listen(httpPort, () => {
-  console.log(`🌐 Serveur HTTP démarré sur le port ${httpPort}`);
+  console.log(`🚀 Serveur de signaling WebRTC démarré sur le port ${httpPort}`);
+  console.log(`🌐 Serveur HTTP et WebSocket sur le port ${httpPort}`);
   console.log(`📊 Endpoint de santé: http://localhost:${httpPort}/health`);
 });
 
