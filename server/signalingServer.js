@@ -5,8 +5,16 @@ const express = require('express');
 const app = express();
 const server = http.createServer(app);
 
-// Créer le serveur WebSocket attaché au serveur HTTP
-const wss = new WebSocket.Server({ server });
+// Créer le serveur WebSocket avec noServer: true
+const wss = new WebSocket.Server({ noServer: true });
+
+// Gérer manuellement l'upgrade WebSocket
+server.on('upgrade', (request, socket, head) => {
+  console.log('🔄 Demande d\'upgrade WebSocket reçue');
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
+});
 
 // Stockage des salles et des connexions
 const rooms = new Map();
