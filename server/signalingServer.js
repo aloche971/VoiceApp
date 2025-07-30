@@ -202,4 +202,5 @@ app.get('/health', (req, res) => {
 // Démarrer le serveur HTTP sur le port 8080 pour les endpoints REST et WebSocket
 const httpPort = 8080;
 server.listen(httpPort, () => {
-  console.log(`🚀 Serveur de signaling WebRTC démarré sur le
+  console.log(`🚀 Serveur de signaling WebRTC démarré sur le port ${httpPort}`);
+});
