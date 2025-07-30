@@ -1,12 +1,12 @@
-const WebSocket = require('ws');
-const http = require('http');
-const express = require('express');
+import { WebSocketServer } from 'ws';
+import http from 'http';
+import express from 'express';
 
 const app = express();
 const server = http.createServer(app);
 
 // Créer le serveur WebSocket avec noServer: true
-const wss = new WebSocket.Server({ noServer: true });
+const wss = new WebSocketServer({ noServer: true });
 
 // Gérer les erreurs du serveur WebSocket
 wss.on('error', (error) => {
@@ -189,7 +189,7 @@ function broadcastToRoom(roomId, message, excludeUserId) {
   
   connections.forEach((connection, ws) => {
     if (connection.roomId === roomId && connection.userId !== excludeUserId) {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === 1) {
         ws.send(JSON.stringify(message));
       }
     }
