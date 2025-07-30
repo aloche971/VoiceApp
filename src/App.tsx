@@ -201,6 +201,9 @@ function App() {
       setWaitingForPeer(true);
 
       // Rejoindre la salle via le service de signaling
+      // Configure le mode de signaling avant de rejoindre
+      signalingService.setSimulationMode(!useRealWebRTC);
+      
       const joined = await webrtc.joinRoom(newRoomId);
       if (!joined) {
         throw new Error('Impossible de créer la salle');
@@ -209,8 +212,6 @@ function App() {
       logger.logInfo('ui', `Salle créée avec le code: ${newRoomId}`);
       logger.logInfo('signaling', 'En attente qu\'un utilisateur rejoigne la salle');
 
-      // Configure le mode de signaling
-      signalingService.setSimulationMode(!useRealWebRTC);
       simulateSecondUserJoining();
 
     } catch (err) {
@@ -237,6 +238,9 @@ function App() {
       await webrtc.createPeerConnection();
       await webrtc.getUserMedia();
 
+      // Configure le mode de signaling avant de rejoindre
+      signalingService.setSimulationMode(!useRealWebRTC);
+      
       // Rejoindre la salle via le service de signaling
       const joined = await webrtc.joinRoom(roomId);
       if (!joined) {
@@ -244,9 +248,6 @@ function App() {
       }
 
       logger.logInfo('signaling', 'Connexion à la salle en cours...');
-
-      // Configure le mode de signaling
-      signalingService.setSimulationMode(!useRealWebRTC);
 
       // Toujours simuler pour les tests
       setTimeout(async () => {
