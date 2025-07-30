@@ -17,7 +17,7 @@ wss.on('error', (error) => {
 server.on('upgrade', (request, socket, head) => {
   console.log('🔄 Demande d\'upgrade WebSocket reçue');
   wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit('connection', ws, request);
+    // handleUpgrade émet automatiquement l'événement 'connection'
   });
 });
 
