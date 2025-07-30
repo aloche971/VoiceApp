@@ -90,6 +90,11 @@ function App() {
     };
   }, [isConnected, showStats, webrtc]);
 
+  useEffect(() => {
+    // Proactively manage signaling service connection based on mode
+    signalingService.setSimulationMode(!useRealWebRTC);
+  }, [useRealWebRTC]);
+
   const handlePeerJoined = async () => {
     try {
       logger.logInfo('webrtc', 'Peer rejoint - création de l\'offre');
