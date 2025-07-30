@@ -8,6 +8,11 @@ const server = http.createServer(app);
 // Créer le serveur WebSocket avec noServer: true
 const wss = new WebSocket.Server({ noServer: true });
 
+// Gérer les erreurs du serveur WebSocket
+wss.on('error', (error) => {
+  console.error('❌ Erreur du serveur WebSocket:', error);
+});
+
 // Gérer manuellement l'upgrade WebSocket
 server.on('upgrade', (request, socket, head) => {
   console.log('🔄 Demande d\'upgrade WebSocket reçue');
