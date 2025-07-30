@@ -1,3 +1,4 @@
+// server/signalingServer.js
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import express from 'express';
@@ -5,20 +6,12 @@ import express from 'express';
 const app = express();
 const server = http.createServer(app);
 
-// Créer le serveur WebSocket avec noServer: true
-const wss = new WebSocketServer({ noServer: true });
+// Créer le serveur WebSocket en lui passant directement le serveur HTTP
+const wss = new WebSocketServer({ server });
 
 // Gérer les erreurs du serveur WebSocket
 wss.on('error', (error) => {
   console.error('❌ Erreur du serveur WebSocket:', error);
-});
-
-// Gérer manuellement l'upgrade WebSocket
-server.on('upgrade', (request, socket, head) => {
-  console.log('🔄 Demande d\'upgrade WebSocket reçue');
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit('connection', ws, request);
-  });
 });
 
 // Stockage des salles et des connexions
@@ -209,15 +202,4 @@ app.get('/health', (req, res) => {
 // Démarrer le serveur HTTP sur le port 8080 pour les endpoints REST et WebSocket
 const httpPort = 8080;
 server.listen(httpPort, () => {
-  console.log(`🚀 Serveur de signaling WebRTC démarré sur le port ${httpPort}`);
-  console.log(`🌐 Serveur HTTP et WebSocket sur le port ${httpPort}`);
-  console.log(`📊 Endpoint de santé: http://localhost:${httpPort}/health`);
-});
-
-process.on('SIGINT', () => {
-  console.log('\n🛑 Arrêt du serveur...');
-  wss.close(() => {
-    console.log('✅ Serveur WebSocket fermé');
-    process.exit(0);
-  });
-});
+  console.log(`🚀 Serveur de signaling WebRTC démarré sur le
