@@ -134,7 +134,12 @@ class SignalingService {
   setSimulationMode(enabled: boolean) {
     this.isSimulated = enabled;
     
-    if (!enabled) {
+    if (enabled) {
+      // Mode simulation activé - déconnecter le service réel
+      realSignalingService.disconnect();
+    } else {
+      // Mode WebRTC réel activé - connecter le service réel
+      realSignalingService.connect();
       // Connecter le service réel aux événements
       realSignalingService.on('message', (message) => {
         this.emit('message', message);

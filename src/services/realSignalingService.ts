@@ -22,7 +22,7 @@ class RealSignalingService {
   private currentRoomId: string | null = null;
 
   constructor() {
-    this.connect();
+    // Don't auto-connect - wait for explicit connect() call
   }
 
   private getWebSocketUrl(): string {
@@ -39,7 +39,7 @@ class RealSignalingService {
     return `ws://localhost:8080`;
   }
 
-  private connect() {
+  connect() {
     try {
       // Connexion au serveur WebSocket avec URL dynamique
       const wsUrl = this.getWebSocketUrl();
