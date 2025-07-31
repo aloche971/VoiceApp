@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Mic, MicOff, Phone, PhoneOff, Users, Settings, Wifi, WifiOff, Terminal } from 'lucide-react';
+import { Mic, MicOff, Phone, PhoneOff, Users, Settings, Wifi, WifiOff, Terminal, Copy, Check } from 'lucide-react';
 import { useWebRTC } from './hooks/useWebRTC';
 
 function App() {
   const [serverUrl, setServerUrl] = useState('ws://localhost:5173/api/signaling');
   const [showSettings, setShowSettings] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [logsCopied, setLogsCopied] = useState(false);
 
   const {
     connectionState,
@@ -19,6 +20,17 @@ function App() {
     toggleMute,
     endCall
   } = useWebRTC(serverUrl);
+
+  const copyLogsToClipboard = async () => {
+    try {
+      const logsText = logs.join('\n');
+      await navigator.clipboard.writeText(logsText);
+      setLogsCopied(true);
+      setTimeout(() => setLogsCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy logs:', error);
+    }
+  };
 
   const renderDisconnectedState = () => (
     <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
@@ -80,7 +92,25 @@ function App() {
 
       {showLogs && (
         <div className="mb-6 p-4 bg-gray-900 rounded-lg max-h-64 overflow-y-auto">
-          <h3 className="text-white text-sm font-medium mb-2">Logs de débogage</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-white text-sm font-medium">Logs de débogage</h3>
+            <button
+              onClick={copyLogsToClipboard}
+              className="flex items-center space-x-1 text-gray-400 hover:text-white text-xs transition-colors"
+            >
+              {logsCopied ? (
+                <>
+                  <Check className="w-3 h-3" />
+                  <span>Copié!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Copier</span>
+                </>
+              )}
+            </button>
+          </div>
           <div className="space-y-1">
             {logs.length === 0 ? (
               <p className="text-gray-400 text-xs">Aucun log disponible</p>
@@ -163,6 +193,25 @@ function App() {
 
       {showLogs && (
         <div className="mb-6 p-4 bg-gray-900 rounded-lg max-h-64 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-white text-sm font-medium">Logs de débogage</h3>
+            <button
+              onClick={copyLogsToClipboard}
+              className="flex items-center space-x-1 text-gray-400 hover:text-white text-xs transition-colors"
+            >
+              {logsCopied ? (
+                <>
+                  <Check className="w-3 h-3" />
+                  <span>Copié!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Copier</span>
+                </>
+              )}
+            </button>
+          </div>
           <div className="space-y-1">
             {logs.slice(-20).map((log, index) => (
               <p
