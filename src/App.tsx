@@ -1,16 +1,204 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Mic, MicOff, Phone, PhoneOff, Users, Settings, Wifi, WifiOff, Terminal } from 'lucide-react';
+import { useWebRTC } from './hooks/useWebRTC';
 
 function App() {
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-gray-800 mb-4">
-          Nouveau projet
+  const [serverUrl, setServerUrl] = useState('ws://localhost:8080');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const {
+    connectionState,
+    isMuted,
+    error,
+    clientRole,
+    partnerId,
+    logs,
+    connect,
+    disconnect,
+    toggleMute,
+    endCall
+  } = useWebRTC(serverUrl);
+
+  const renderDisconnectedState = () => (
+    <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+      <div className="text-center mb-8">
+        <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Users className="w-10 h-10 text-blue-600" />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">VoiceChat WebRTC</h1>
+        <p className="text-gray-600 mb-4">Chat vocal peer-to-peer sécurisé</p>
+        
+        <div className="flex justify-center space-x-4 mb-4">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="flex items-center space-x-2 text-gray-500 hover:text-gray-700 text-sm"
+          >
+            <Settings className="w-4 h-4" />
+            <span>Paramètres</span>
+          </button>
+          
+          <button
+            onClick={() => setShowLogs(!showLogs)}
+            className="flex items-center space-x-2 text-gray-500 hover:text-gray-700 text-sm"
+          >
+            <Terminal className="w-4 h-4" />
+            <span>Logs</span>
+          </button>
+        </div>
+      </div>
+
+      {showSettings && (
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            URL du serveur de signalisation
+          </label>
+          <input
+            type="text"
+            value={serverUrl}
+            onChange={(e) => setServerUrl(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            placeholder="ws://localhost:8080"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Pour le développement local, utilisez ws://localhost:8080
+          </p>
+        </div>
+      )}
+
+      {showLogs && (
+        <div className="mb-6 p-4 bg-gray-900 rounded-lg max-h-64 overflow-y-auto">
+          <h3 className="text-white text-sm font-medium mb-2">Logs de débogage</h3>
+          <div className="space-y-1">
+            {logs.length === 0 ? (
+              <p className="text-gray-400 text-xs">Aucun log disponible</p>
+            ) : (
+              logs.slice(-20).map((log, index) => (
+                <p
+                  key={index}
+                  className={`text-xs font-mono ${
+                    log.includes('[ERROR]') ? 'text-red-400' :
+                    log.includes('[WARN]') ? 'text-yellow-400' :
+                    'text-green-400'
+                  }`}
+                >
+                  {log}
+                </p>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <p className="text-red-700 text-sm">{error}</p>
+        </div>
+      )}
+
+      <button
+        onClick={connect}
+        disabled={connectionState === 'connecting'}
+        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-4 px-6 rounded-xl transition-colors duration-200 flex items-center justify-center space-x-2"
+      >
+        <Phone className="w-5 h-5" />
+        <span>
+          {connectionState === 'connecting' ? 'Connexion...' : 'Rejoindre la conversation'}
+        </span>
+      </button>
+
+      <p className="text-xs text-gray-500 text-center mt-4">
+        Maximum 2 utilisateurs par session
+      </p>
+    </div>
+  );
+
+  const renderConnectedState = () => (
+    <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+      <div className="text-center mb-8">
+        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          {connectionState === 'connected' ? (
+            <Wifi className="w-10 h-10 text-green-600" />
+          ) : (
+            <WifiOff className="w-10 h-10 text-yellow-600" />
+          )}
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          {connectionState === 'connected' ? 'Connecté' : 'En attente...'}
         </h1>
-        <p className="text-gray-600">
-          Prêt à commencer une nouvelle application !
+        <p className="text-gray-600 mb-4">
+          {clientRole === 'client1' && !partnerId && 'En attente d\'un partenaire...'}
+          {clientRole === 'client1' && partnerId && 'Vous êtes l\'hôte de la conversation'}
+          {clientRole === 'client2' && 'Vous avez rejoint la conversation'}
+        </p>
+        
+        {partnerId && (
+          <div className="bg-blue-50 rounded-lg p-3 mb-4">
+            <p className="text-sm text-blue-700">
+              Connecté avec: {partnerId.substring(0, 8)}...
+            </p>
+          </div>
+        )}
+
+        <button
+          onClick={() => setShowLogs(!showLogs)}
+          className="flex items-center space-x-2 mx-auto text-gray-500 hover:text-gray-700 text-sm mb-4"
+        >
+          <Terminal className="w-4 h-4" />
+          <span>Logs de débogage</span>
+        </button>
+      </div>
+
+      {showLogs && (
+        <div className="mb-6 p-4 bg-gray-900 rounded-lg max-h-64 overflow-y-auto">
+          <div className="space-y-1">
+            {logs.slice(-20).map((log, index) => (
+              <p
+                key={index}
+                className={`text-xs font-mono ${
+                  log.includes('[ERROR]') ? 'text-red-400' :
+                  log.includes('[WARN]') ? 'text-yellow-400' :
+                  'text-green-400'
+                }`}
+              >
+                {log}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-center space-x-4 mb-6">
+        <button
+          onClick={toggleMute}
+          className={`p-4 rounded-full transition-colors duration-200 ${
+            isMuted 
+              ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+        </button>
+        
+        <button
+          onClick={endCall}
+          className="p-4 bg-red-100 text-red-600 hover:bg-red-200 rounded-full transition-colors duration-200"
+        >
+          <PhoneOff className="w-6 h-6" />
+        </button>
+      </div>
+
+      <div className="text-center">
+        <p className="text-xs text-gray-500">
+          {isMuted ? 'Microphone coupé' : 'Microphone actif'}
         </p>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      {connectionState === 'disconnected' ? renderDisconnectedState() : renderConnectedState()}
     </div>
   );
 }
