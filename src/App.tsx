@@ -49,10 +49,20 @@ function App() {
       </div>
 
       {showSettings && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            URL du serveur de signalisation
-          </label>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-2 text-yellow-800 mb-2">
+            <Settings className="w-4 h-4" />
+            <span className="font-medium">Configuration & Status</span>
+          </div>
+          <div className="text-sm text-yellow-700 mb-3">
+            <p><strong>Note:</strong> For full functionality, start Supabase services with <code className="bg-yellow-100 px-1 rounded">supabase start</code></p>
+            <p>The app will work with basic STUN servers if Supabase is not running.</p>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-yellow-800 mb-1">
+                Server URL
+              </label>
           <input
             type="text"
             value={serverUrl}
@@ -63,6 +73,8 @@ function App() {
           <p className="text-xs text-gray-500 mt-1">
             Pour le développement local, utilisez ws://localhost:8080
           </p>
+            </div>
+          </div>
         </div>
       )}
 
