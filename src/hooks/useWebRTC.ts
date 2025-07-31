@@ -436,7 +436,7 @@ export const useWebRTC = (serverUrl: string = 'ws://localhost:8080'): WebRTCHook
   // Terminer l'appel
   const endCall = useCallback(() => {
     logToUI('End Call button clicked!');
-    if (wsRef.current) {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'endCall' }));
     }
     handleCallEnd('Call ended by you. Waiting for a new partner...');
