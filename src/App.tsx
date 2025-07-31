@@ -3,7 +3,7 @@ import { Mic, MicOff, Phone, PhoneOff, Users, Settings, Wifi, WifiOff, Terminal 
 import { useWebRTC } from './hooks/useWebRTC';
 
 function App() {
-  const [serverUrl, setServerUrl] = useState('ws://localhost:8080');
+  const [serverUrl, setServerUrl] = useState('ws://localhost:5173/api/signaling');
   const [showSettings, setShowSettings] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
 
