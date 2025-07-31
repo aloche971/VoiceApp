@@ -56,10 +56,23 @@ export const useWebRTC = (serverUrl: string = 'ws://localhost:8080'): WebRTCHook
   const loadIceServers = useCallback(async () => {
     try {
       logToUI('Fetching ICE servers from server...');
-      const response = await fetch('/api/ice-servers');
+      const response = await fetch('/api/ice-servers', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
       
       if (!response.ok) {
-        throw new Error(`Failed to load ICE servers: ${response.statusText}`);
+        logToUI(`ICE servers endpoint not available (${response.status}), using default STUN servers`, 'warn');
+        iceServersRef.current = [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun.cloudflare.com:3478' }
+        ];
+        logToUI(`Using fallback ICE servers: ${JSON.stringify(iceServersRef.current)}`);
+        return;
       }
 
       const data = await response.json();
@@ -67,11 +80,25 @@ export const useWebRTC = (serverUrl: string = 'ws://localhost:8080'): WebRTCHook
         iceServersRef.current = data.iceServers;
         logToUI(`ICE servers loaded: ${JSON.stringify(data.iceServers)}`);
       } else {
-        throw new Error('Unexpected ICE servers response structure');
+        logToUI('Unexpected ICE servers response, using default STUN servers', 'warn');
+        iceServersRef.current = [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun.cloudflare.com:3478' }
+        ];
       }
     } catch (error) {
-      logToUI(`Failed to load network configuration: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-      // Utiliser les serveurs par défaut en cas d'erreur
+      logToUI(`Failed to load network configuration: ${error instanceof Error ? error.message : 'Unknown error'}`, 'warn');
+      logToUI('Using fallback STUN servers for WebRTC connection', 'warn');
+      // Utiliser les serveurs STUN par défaut en cas d'erreur
+      iceServersRef.current = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' }
+      ];
+      logToUI(`Fallback ICE servers configured: ${JSON.stringify(iceServersRef.current)}`);
     }
   }, [logToUI]);
 
